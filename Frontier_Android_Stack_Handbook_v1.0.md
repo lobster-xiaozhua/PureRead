@@ -59,6 +59,7 @@ PureRead 完整技术开发规格书 v3.0（整合版）
 第5章 核心功能技术实现细节 Phase 1-3 开发
 第6章 UI/UX 设计规范 全程
 第7章 合规、隐私与安全性 Phase 5 上架
+第7.5章 Android 16（API 36）适配专项 Phase 1-5 全程
 第8章 开发路线图与里程碑（10周） 项目管理
 第9章 风险登记册与应对预案 全程
 第10章 附录：构建与测试指令 Phase 0 基建
@@ -353,11 +354,27 @@ data class ArticleFtsEntity(
 
 第5章 核心功能技术实现细节
 
-5.1 正文提取引擎（JS注入 + Prompt 拦截）
+5.1 正文提取引擎（JS 注入 + 桥接协议）
 
-最终策略：抛弃 evaluateJavascript 回调，采用 prompt() 拦截，彻底解决大 JSON 截断问题。
+5.1.1 方案选型说明
 
-JS 端逻辑 (assets/readability.js)：
+当前默认采用 `prompt()` 拦截作为 JS → Native 的数据通道，原因：
+
+- `evaluateJavascript(...)` 的结果回调在部分旧版本 ROM 上曾出现大 JSON 截断或编码异常。
+- `prompt()` 是同步通道，实现简单，便于在 `WebChromeClient` 中统一拦截与版本校验（见 13.1 节协议版本控制）。
+
+但需要注意：
+
+- `evaluateJavascript()` 是现代 Android（API 24+）官方推荐的标准桥接方式，在 Android 16 上仍然稳定可用。
+- `prompt()` 依赖 `WebChromeClient.onJsPrompt`，部分第三方 WebView 内核可能行为不一致。
+
+工程建议：
+
+1. 主路径使用 `prompt()` 拦截。
+2. 在 Phase 1 结束前实现一条 `evaluateJavascript()` 备用通道：当 `prompt()` 拦截失败（返回 null、超时、版本不匹配）时自动切换。
+3. 所有桥接逻辑统一封装到 `ReadabilityJSBridge`，对外只暴露 `suspend fun extract(url: String): ReadabilityResult`，内部通道对调用方透明。
+
+5.1.2 JS 端逻辑 (assets/readability.js)：
 
 ```javascript
 function extractContent() {
@@ -463,6 +480,101 @@ function loadNextChapter(index) {
 版权免责 启动引导页明确声明：“请勿用于盗版传播，用户需自行承担内容来源的法律责任”。
 无障碍 (Accessibility) 所有可点击元素必须含 contentDescription，对比度 ≥ 4.5:1。
 
+第7.5章 Android 16（API 36）适配专项
+
+> 本章为 Android 16（API 36）targetSdk 强制行为变更的集中应对指南。文档已设定 `compileSdk = 36`、`targetSdk = 36`，以下适配必须在 Phase 1 启动前完成技术预研，并在 Phase 2-4 逐步落地。
+
+7.5.1 为什么必须单独处理
+
+Android 16 对 `targetSdk >= 36` 的应用启用了多项强制性运行时行为变更，其中与 PureRead 直接相关的有：
+
+1. **Edge-to-Edge 强制生效**：系统忽略 `setDecorFitsSystemWindows(true)` 调用，所有 Activity 默认进入全面屏模式。
+2. **Predictive Back 手势**：若开启 `android:enableOnBackInvokedCallback="true"`，返回键逻辑必须迁移到 `OnBackInvokedDispatcher`。
+3. **大屏幕方向/尺寸限制失效**：在 600dp+ 设备上，`screenOrientation` 等限制被系统忽略。
+4. **通知 cooldown 与强制分组**：高频进度通知可能被合并或降频。
+5. **废弃 `announceForAccessibility`**：无障碍即时播报需改用 Live Region 或 `AccessibilityManager`。
+
+未处理上述变更将导致：阅读器被导航栏遮挡、返回手势丢失状态、横竖屏切换异常、下载通知不更新、无障碍提示失效。
+
+7.5.2 Edge-to-Edge 强制适配
+
+所有 Activity/Fragment 的根布局必须监听 WindowInsets，并为系统栏留出安全区域。
+
+阅读器沉浸式场景：
+
+```kotlin
+// 在阅读器全屏时，先隐藏系统栏再让 WebView 占据全屏
+// 控制层（工具栏、BottomSheet）需通过 WindowInsetsCompat 获取 systemBars 高度并设置 padding
+ViewCompat.setOnApplyWindowInsetsListener(readerControlBar) { view, insets ->
+    val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    view.updatePadding(top = systemBars.top, bottom = systemBars.bottom)
+    insets
+}
+```
+
+BottomSheet/Dialog 场景：
+
+```kotlin
+// BottomSheetDialogFragment 需设置 extendEdgeToEdge = true 并为底部导航栏补 padding
+val bottomSheet = dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+ViewCompat.setOnApplyWindowInsetsListener(bottomSheet) { view, insets ->
+    val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    view.updatePadding(bottom = systemBars.bottom)
+    insets
+}
+```
+
+7.5.3 Predictive Back 手势
+
+若项目启用 Predictive Back（推荐在 Android 16 上开启），所有返回逻辑必须注册到 `OnBackInvokedDispatcher`：
+
+```kotlin
+// 在阅读器等需要拦截返回的页面注册
+onBackInvokedDispatcher.registerOnBackInvokedCallback(
+    OnBackInvokedDispatcher.PRIORITY_DEFAULT
+) {
+    if (isReaderControlBarVisible) {
+        hideReaderControlBar()
+    } else {
+        finish() // 或调用默认返回
+    }
+}
+```
+
+注意：批量选择模式、编辑对话框、搜索条展开等临时状态，返回时应优先关闭临时层，而非退出页面。
+
+7.5.4 大屏幕与折叠屏适配
+
+Android 16 在大屏设备上忽略 `screenOrientation` 限制，阅读器必须：
+
+- 支持横竖屏切换且阅读进度不丢失（通过 `ViewModel` + `SavedStateHandle` 保存 `scrollY`）。
+- 横屏时左右 1/3 点击翻页区域需按当前宽度重新计算。
+- 分屏/多窗口模式下，WebView 手势区域不得与系统分屏手柄冲突。
+
+7.5.5 通知行为变更
+
+小说下载与 APK 更新通知需遵守 Android 16 新规：
+
+- **避免高频刷新**：使用同一个通知 ID 更新进度，而非每次发送新通知。
+- **Notification Cooldown**：进度更新间隔建议 ≥ 1 秒，避免被系统降频。
+- **强制分组**：为下载完成、更新完成等通知指定合理的 GroupKey，避免被系统强制合并后丢失关键信息。
+
+7.5.6 无障碍变更
+
+- 不再使用 `View.announceForAccessibility()`。
+- 对需要即时播报的视图设置 `android:liveRegion="polite"`，或调用 `AccessibilityManager.sendAccessibilityEvent()`。
+
+7.5.7 Android 16 验证清单
+
+| 验证项 | 通过标准 |
+|---|---|
+| Edge-to-Edge | 状态栏/导航栏未遮挡阅读正文、控制栏、BottomSheet |
+| Predictive Back | 返回手势优先关闭临时层，不丢失阅读状态 |
+| 横竖屏切换 | 阅读位置、主题、字体大小保持不变 |
+| 分屏模式 | 翻页手势不误触分屏边界 |
+| 通知行为 | 下载进度实时更新，完成通知可点击跳转 |
+| 无障碍 | 页面切换、操作结果有恰当的 Live Region 反馈 |
+
 第8章 开发路线图与里程碑（10周）
 
 阶段 时间 核心目标 可交付物/里程碑
@@ -473,14 +585,21 @@ Phase 3 W5-6 小说下载引擎 ① 目录解析 (Jsoup + 聚簇降级)；② Wo
 Phase 4 W7-8 体验打磨与性能优化 ① 自毁空闲 WebView；② 20 个 Fixtures 单元测试通过；③ FTS4 全文搜索；④ 引导页与设置页；⑤ 冷启动 ≤ 1.2s。里程碑：内测版发布。
 Phase 5 W9-10 上架收尾 ① 无障碍适配；② 应用图标/商店截图；③ 隐私政策上线；④ 更新模块集成；⑤ Google Play 内部测试。里程碑：正式版 APK 签名就绪。
 
+> 路线图使用说明：
+> - **MVP（最小可用产品）**：Phase 0–2 + 第 7.5 章 Android 16 基础适配。若 10 周时间紧张，优先保证此范围可发布内测。
+> - **可降级项**：Phase 3（小说下载）、Phase 5 中的更新模块可拆分为独立迭代版本，不必阻塞首次内测。
+> - **风险缓冲**：Phase 0 预留 2–3 天处理 AGP 9.0 / Otter 3 工具链问题；Phase 4 预留 1 周应对不可预见的 Android 16 适配与性能问题。
+
 第9章 风险登记册与应对预案
 
 风险项 触发条件 应对措施
-国产 ROM 杀后台 MIUI/EMUI 锁屏后下载中断 WorkManager 请求 setExpedited() + 绑定前台服务。
+国产 ROM 杀后台 MIUI/EMUI/ColorOS 锁屏后下载中断 WorkManager 请求 setExpedited() + 绑定前台服务；在设置页引导用户关闭电池优化。
 Readability JS 超时 页面 JS 繁重 设置超时 3s，降级至 Level 3 (Jsoup 启发式)。
 小说站反爬 返回 403 User-Agent 轮换池 + 自动增加下载延迟 (500ms~2s)。
 WebView OOM 低内存设备 阅读器禁用图片加载；独立进程开关作为保底。
-KSP 编译失败 Room 版本不匹配 严格锁定 ksp("2.3.21-2.0.0") 与 Room 2.7.0。
+KSP 编译失败 Room/KSP 版本不匹配 严格锁定 KSP 2.3.2 与 Room 2.7.0，并在 Phase 0 完成一次全量构建验证。
+Android 16 Edge-to-Edge 强制适配遗漏 targetSdk=36 触发强制全面屏 所有页面按 7.5.2 处理 WindowInsets，Phase 2 结束前完成真机验证。
+前沿工具链不稳定 AGP 9.0 / AS Otter 3 新特性存在未知问题 Phase 0 预留 2–3 天排错；建立可回退到稳定版本（AGP 8.x + Kotlin 2.0.x）的预案。
 
 第10章 附录：构建与测试指令
 
@@ -976,7 +1095,10 @@ Fatal 不可恢复的崩溃前夕 常时输出 + 触发优雅关闭/崩溃上报
 · 「正常 10 条，异常 30 条」原则：每个核心业务类（Extractor、Parser）的单元测试必须覆盖 10 种正常输入和 30 种异常输入（包括空字符串、超长字符串、特殊 Unicode 字符）。
 · Fixture 命名：testData/{函数名}_{输入条件}_{预期结果}.html
   · 例：extract_medium_article_success.html / extract_empty_page_failure.html
-· 判定标准：分支覆盖率（Branch Coverage）必须 ≥ 90%，行覆盖率由 CI 工具（Jacoco）自动检查，不达标则构建失败。
+· 判定标准（分阶段，避免 10 周单人开发被覆盖率压垮）：
+  · Phase 1–2：核心类（Extractor、Parser、UrlUtils）分支覆盖率 ≥ 60%。
+  · Phase 4：整体分支覆盖率 ≥ 80%，核心业务类 ≥ 85%。
+  · 90% 作为长期目标，但不强制在 10 周内达成；CI 先设置 Warn 阈值，待稳定后再设为 Fail。
 
 14.7 本规范在 PureRead 开发中的落地执行细则
 
@@ -1097,6 +1219,10 @@ PureRead 架构中，WebView 运行在默认进程（若启用独立进程选项
 存储空间填满（制造磁盘满） 红色横幅提示，提取/下载自动暂停 不崩溃，不无限弹 Toast
 系统时间回退至 1970 年 文章列表依然按正常顺序排列 时间戳防御使用 max(currentTimestamp, lastRecordTime + 1000)
 分屏模式下打开阅读器 翻页手势依然生效，不误触分屏边界 左右 1/3 点击区域与分屏手柄无冲突
+Android 16 真机首次启动 无崩溃、无白屏、启动时间 ≤ 1.2s 验证 edge-to-edge 无遮挡、冷启动路径正常
+Android 16 阅读器返回手势 优先关闭控制层/BottomSheet，不直接退出 验证 Predictive Back 注册正确
+Android 16 横竖屏切换阅读 阅读位置、主题、字体保持不变 验证 ViewModel + SavedStateHandle 恢复
+Android 16 下载通知 进度实时更新，完成通知可点击跳转 验证通知 cooldown/group 策略生效
 
 第16章 极致性能优化（2026前沿型方案）
 
