@@ -36,7 +36,7 @@ public class ReadabilityJSBridge(
     private companion object {
         private const val TAG = "ReadabilityJSBridge"
         private const val PUREREAD_PROMPT_PREFIX = "PUREREAD://"
-        private const val READABILITY_INJECTION_TIMEOUT_MS = 8000L
+        private const val READABILITY_INJECTION_TIMEOUT_MS = 3000L
         private const val JS_ENCODING = "UTF-8"
         private const val MAX_PLAIN_TEXT_LENGTH = 5000
         private const val READABILITY_ASSET_PATH = "readability.js"

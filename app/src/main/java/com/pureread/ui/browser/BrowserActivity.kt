@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.util.Base64
 import android.view.inputmethod.EditorInfo
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -15,10 +17,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.snackbar.Snackbar
 import com.pureread.R
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkObserver
+import com.pureread.core.network.NetworkState
 import com.pureread.data.model.Result
 import com.pureread.databinding.ActivityBrowserBinding
 import com.pureread.ui.common.EdgeToEdgeHelper
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 /**
@@ -35,6 +41,8 @@ public class BrowserActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityBrowserBinding
     private val viewModel: BrowserViewModel by viewModel
+    private val networkStateFlow: Flow<NetworkState> by inject()
+    private val networkObserver: NetworkObserver by inject()
     private var currentPageTitle: String = ""
 
     protected override fun onCreate(savedInstanceState: Bundle?): Unit {
@@ -127,8 +135,23 @@ public class BrowserActivity : AppCompatActivity() {
 
         val fullUrl = normalizeUrl(inputUrl)
         viewModel.onUrlChanged(fullUrl)
+        if (!networkObserver.isNetworkAvailable()) {
+            showOfflineErrorPage()
+            showSnackbar(getString(R.string.network_offline))
+            return
+        }
         binding.webViewBrowser.loadUrl(fullUrl)
         binding.addressInput.editText?.clearFocus()
+    }
+
+    private fun showOfflineErrorPage() {
+        binding.webViewBrowser.loadDataWithBaseURL(
+            null,
+            OFFLINE_ERROR_PAGE_HTML,
+            "text/html",
+            "UTF-8",
+            null
+        )
     }
 
     private fun normalizeUrl(inputUrl: String): String {
@@ -162,6 +185,18 @@ public class BrowserActivity : AppCompatActivity() {
             public override fun onPageFinished(view: WebView?, url: String?): Unit {
                 super.onPageFinished(view, url)
                 binding.progressBrowser.isVisible = false
+            }
+
+            public override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ): Unit {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame == true) {
+                    PureLog.w(TAG, "onReceivedError", "页面加载失败 | errorCode=${error?.errorCode}")
+                    showOfflineErrorPage()
+                }
             }
         }
 
@@ -218,6 +253,12 @@ public class BrowserActivity : AppCompatActivity() {
                         handleNovelDownloadResult(result)
                     }
                 }
+
+                launch {
+                    networkStateFlow.collect { state ->
+                        handleNetworkState(state)
+                    }
+                }
             }
         }
     }
@@ -263,6 +304,22 @@ public class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleNetworkState(state: NetworkState) {
+        when (state) {
+            is NetworkState.Available -> {
+                // 网络恢复时仅提示一次，避免启动时误报
+            }
+
+            is NetworkState.Unavailable -> {
+                showSnackbar(getString(R.string.network_offline))
+            }
+
+            is NetworkState.Checking -> {
+                // 检测中不提示
+            }
+        }
+    }
+
     private fun showSnackbar(message: String) {
         Snackbar.make(binding.coordinatorBrowser, message, Snackbar.LENGTH_SHORT).show()
     }
@@ -278,5 +335,24 @@ public class BrowserActivity : AppCompatActivity() {
                 return btoa(binary);
             })()
         """
+
+        private val OFFLINE_ERROR_PAGE_HTML = """
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body { font-family: sans-serif; text-align: center; padding: 48px 24px; color: #757575; }
+                    .icon { font-size: 64px; margin-bottom: 16px; }
+                    h1 { font-size: 20px; color: #2C2C2C; margin-bottom: 8px; }
+                    p { font-size: 16px; line-height: 1.6; }
+                </style>
+            </head>
+            <body>
+                <div class="icon">📡</div>
+                <h1>当前无网络</h1>
+                <p>请检查网络连接后重试。<br>PureRead 不生产内容，仅在你联网时帮你提取。</p>
+            </body>
+            </html>
+        """.trimIndent()
     }
 }

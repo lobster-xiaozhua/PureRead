@@ -8,6 +8,8 @@ import android.os.MessageQueue
 import android.webkit.WebView
 import com.pureread.core.di.appModule
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkObserver
+import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -39,6 +41,7 @@ public class App : Application() {
             modules(appModule)
         }
 
+        initNetworkObserver()
         scheduleWebViewPreload()
 
         val costTimeMs = System.currentTimeMillis() - startTimeMs
@@ -55,6 +58,15 @@ public class App : Application() {
         if (level >= TRIM_MEMORY_MODERATE) {
             clearImageCache()
             clearWebViewCache()
+        }
+    }
+
+    private fun initNetworkObserver() {
+        try {
+            val networkObserver = get<NetworkObserver>()
+            PureLog.i("App", "initNetworkObserver", "网络观察者初始化完成 | available=${networkObserver.isNetworkAvailable()}")
+        } catch (e: Exception) {
+            PureLog.e("App", "initNetworkObserver", e, "网络观察者初始化失败")
         }
     }
 

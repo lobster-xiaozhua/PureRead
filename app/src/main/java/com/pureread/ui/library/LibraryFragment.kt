@@ -18,11 +18,14 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import com.pureread.R
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkState
 import com.pureread.data.model.Result
+import kotlinx.coroutines.flow.Flow
 import com.pureread.databinding.FragmentLibraryBinding
 import com.pureread.ui.common.ViewBindingFragment
 import com.pureread.ui.reader.ReaderActivity
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 /**
@@ -37,6 +40,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
 
     private val viewModel: LibraryViewModel by viewModel()
+    private val networkStateFlow: Flow<NetworkState> by inject()
     private lateinit var adapter: ArticleAdapter
 
     private var actionMode: ActionMode? = null
@@ -176,6 +180,24 @@ public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
                         handleFetchResult(result)
                     }
                 }
+
+                launch {
+                    networkStateFlow.collect { state ->
+                        handleNetworkState(state)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleNetworkState(state: NetworkState) {
+        when (state) {
+            is NetworkState.Unavailable -> {
+                showSnackbar(getString(R.string.network_offline))
+            }
+
+            else -> {
+                // Available / Checking 不提示
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkObserver
 import com.pureread.data.local.dao.ChapterDao
 import com.pureread.data.local.dao.DownloadTaskDao
 import com.pureread.data.local.entity.ChapterEntity
@@ -28,7 +29,8 @@ public class DownloadNovelUseCase(
     private val novelCatalogParser: NovelCatalogParser,
     private val chapterDao: ChapterDao,
     private val downloadTaskDao: DownloadTaskDao,
-    private val workManager: WorkManager
+    private val workManager: WorkManager,
+    private val networkObserver: NetworkObserver
 ) {
 
     private companion object {
@@ -53,6 +55,13 @@ public class DownloadNovelUseCase(
         // 前置条件：articleId 有效，catalogHtmlString 非空
         // 后置条件：章节、任务已持久化，Worker 已入队
         // 副作用：写入数据库并调度 Worker
+        if (!networkObserver.isNetworkAvailable()) {
+            PureLog.w(TAG, "invoke", "网络不可用，终止小说下载入队")
+            return@withContext Result.Error(
+                PureError.Network(messageString = "当前无网络，请连接后重试")
+            )
+        }
+
         val candidateList: List<ChapterCandidate> =
             novelCatalogParser.parseCatalog(catalogHtmlString, baseUrlString)
         if (candidateList.isEmpty()) {

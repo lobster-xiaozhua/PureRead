@@ -4,6 +4,8 @@ import android.webkit.WebView
 import androidx.room.Room
 import androidx.work.WorkManager
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkObserver
+import com.pureread.core.network.NetworkState
 import com.pureread.core.utils.FileUtils
 import com.pureread.data.local.PureReadDatabase
 import com.pureread.data.remote.api.ArticleExtractor
@@ -49,6 +51,16 @@ import java.util.concurrent.TimeUnit
 public val appModule = module {
 
     // region 网络层
+
+    /**
+     * 全局网络状态观察者。
+     */
+    single { NetworkObserver.create(androidContext()) }
+
+    /**
+     * 全局网络状态流，供各 ViewModel 订阅。
+     */
+    single { get<NetworkObserver>().networkStateFlow }
 
     /**
      * 全局 OkHttp 客户端。
@@ -136,10 +148,10 @@ public val appModule = module {
     factory { GetArticleUseCase(articleRepository = get(), articleBodyDao = get()) }
     factory { RefreshArticleUseCase(articleRepository = get(), articleDao = get(), articleBodyDao = get(), articleExtractor = get()) }
     factory { DeleteArticleUseCase(articleRepository = get(), chapterDao = get()) }
-    factory { DownloadNovelUseCase(novelCatalogParser = get(), chapterDao = get(), downloadTaskDao = get(), workManager = get()) }
+    factory { DownloadNovelUseCase(novelCatalogParser = get(), chapterDao = get(), downloadTaskDao = get(), workManager = get(), networkObserver = get()) }
     factory { SaveArticleProgressUseCase(articleRepository = get()) }
     factory { GetArticleByIdUseCase(articleRepository = get()) }
-    factory { FetchAndAddArticleUseCase(okHttpClient = get(), articleExtractor = get(), articleDao = get(), articleBodyDao = get()) }
+    factory { FetchAndAddArticleUseCase(okHttpClient = get(), articleExtractor = get(), articleDao = get(), articleBodyDao = get(), networkObserver = get()) }
     factory { CreateNovelArticleUseCase(articleDao = get()) }
 
     // endregion

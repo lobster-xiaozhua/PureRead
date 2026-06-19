@@ -1,6 +1,7 @@
 package com.pureread.domain.usecase
 
 import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkObserver
 import com.pureread.core.utils.UrlUtils
 import com.pureread.data.local.dao.ArticleBodyDao
 import com.pureread.data.local.dao.ArticleDao
@@ -28,6 +29,7 @@ public class FetchAndAddArticleUseCase(
     private val articleExtractor: ArticleExtractor,
     private val articleDao: ArticleDao,
     private val articleBodyDao: ArticleBodyDao,
+    private val networkObserver: NetworkObserver,
 ) {
 
     private companion object {
@@ -46,6 +48,11 @@ public class FetchAndAddArticleUseCase(
         // 前置条件：urlString 非空且可解析
         // 后置条件：文章与正文已持久化
         // 副作用：发起网络请求并写入数据库
+        if (!networkObserver.isNetworkAvailable()) {
+            PureLog.w(TAG, "invoke", "网络不可用，终止后台抓取")
+            return@withContext Result.Error(PureError.Network(messageString = "当前无网络，请连接后重试"))
+        }
+
         val normalizedUrl = UrlUtils.normalizeUrl(urlString)
         if (normalizedUrl.isBlank()) {
             return@withContext Result.Error(PureError.Extract(messageString = "URL 无效"))
