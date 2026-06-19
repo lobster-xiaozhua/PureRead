@@ -34,7 +34,8 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 public class BrowserActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityBrowserBinding
-    private val viewModel: BrowserViewModel by viewModel()
+    private val viewModel: BrowserViewModel by viewModel
+    private var currentPageTitle: String = ""
 
     protected override fun onCreate(savedInstanceState: Bundle?): Unit {
         super.onCreate(savedInstanceState)
@@ -83,6 +84,28 @@ public class BrowserActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbarBrowser)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbarBrowser.setNavigationOnClickListener { finish() }
+        binding.toolbarBrowser.inflateMenu(R.menu.menu_browser)
+        binding.toolbarBrowser.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_download_novel -> {
+                    triggerNovelDownload()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun triggerNovelDownload() {
+        val sourceUrl = viewModel.currentUrlFlow.value
+            .takeIf { it.isNotBlank() }
+            ?: binding.webViewBrowser.url
+        sourceUrl?.let { url ->
+            binding.webViewBrowser.evaluateJavascript(GET_PAGE_HTML_JS) { base64Html ->
+                val htmlString = base64Html?.let { decodeBase64Html(it) }.orEmpty()
+                viewModel.downloadNovel(url, htmlString, currentPageTitle)
+            }
+        }
     }
 
     private fun setupAddressBar() {
@@ -147,6 +170,11 @@ public class BrowserActivity : AppCompatActivity() {
                 super.onProgressChanged(view, newProgress)
                 binding.progressBrowser.progress = newProgress
             }
+
+            public override fun onReceivedTitle(view: WebView?, title: String?): Unit {
+                super.onReceivedTitle(view, title)
+                currentPageTitle = title ?: ""
+            }
         }
     }
 
@@ -179,8 +207,16 @@ public class BrowserActivity : AppCompatActivity() {
     private fun observeViewModel() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.extractResultFlow.collect { result ->
-                    handleExtractResult(result)
+                launch {
+                    viewModel.extractResultFlow.collect { result ->
+                        handleExtractResult(result)
+                    }
+                }
+
+                launch {
+                    viewModel.novelDownloadResultFlow.collect { result ->
+                        handleNovelDownloadResult(result)
+                    }
                 }
             }
         }
@@ -203,6 +239,26 @@ public class BrowserActivity : AppCompatActivity() {
 
             else -> {
                 // 空或加载状态不处理
+            }
+        }
+    }
+
+    private fun handleNovelDownloadResult(result: Result<Unit>?) {
+        when (result) {
+            is Result.Success -> {
+                PureLog.i(TAG, "handleNovelDownloadResult", "小说下载已入队")
+                showSnackbar(getString(R.string.download_running))
+                viewModel.consumeNovelDownloadResult()
+            }
+
+            is Result.Error -> {
+                PureLog.e(TAG, "handleNovelDownloadResult", "小说下载入队失败 | error=${result.error}")
+                showSnackbar(getString(R.string.download_failed))
+                viewModel.consumeNovelDownloadResult()
+            }
+
+            else -> {
+                // 空状态不处理
             }
         }
     }

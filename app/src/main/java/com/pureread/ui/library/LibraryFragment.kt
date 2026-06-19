@@ -7,6 +7,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
@@ -14,7 +15,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.snackbar.Snackbar
 import com.pureread.R
+import com.pureread.core.log.PureLog
+import com.pureread.data.model.Result
 import com.pureread.databinding.FragmentLibraryBinding
 import com.pureread.ui.common.ViewBindingFragment
 import com.pureread.ui.reader.ReaderActivity
@@ -108,8 +112,40 @@ public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
     }
 
     private fun setupSearch() {
-        binding.searchInput.editText?.doAfterTextChanged { editable ->
-            viewModel.search(editable?.toString().orEmpty())
+        val editText = binding.searchInput.editText ?: return
+        editText.doAfterTextChanged { editable ->
+            val input = editable?.toString().orEmpty()
+            viewModel.search(input)
+            updateSearchEndIcon(input)
+        }
+        editText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO) {
+                tryFetchUrl(editText.text?.toString().orEmpty())
+                true
+            } else {
+                false
+            }
+        }
+        binding.searchInput.setEndIconOnClickListener {
+            tryFetchUrl(editText.text?.toString().orEmpty())
+        }
+    }
+
+    private fun updateSearchEndIcon(input: String) {
+        val isUrl = input.trim().startsWith("http://") || input.trim().startsWith("https://")
+        binding.searchInput.endIconDrawable = if (isUrl) {
+            requireContext().getDrawable(com.pureread.R.drawable.ic_browser)
+        } else {
+            requireContext().getDrawable(com.pureread.R.drawable.ic_browser)
+        }
+        binding.searchInput.isEndIconVisible = isUrl
+    }
+
+    private fun tryFetchUrl(input: String) {
+        val trimmed = input.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            viewModel.fetchArticle(trimmed)
+            binding.searchInput.editText?.clearFocus()
         }
     }
 
@@ -134,8 +170,39 @@ public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
                         binding.swipeRefresh.isRefreshing = isLoading
                     }
                 }
+
+                launch {
+                    viewModel.fetchResultFlow.collect { result ->
+                        handleFetchResult(result)
+                    }
+                }
             }
         }
+    }
+
+    private fun handleFetchResult(result: Result<Long>?) {
+        when (result) {
+            is Result.Success -> {
+                PureLog.i(TAG, "handleFetchResult", "添加成功 | articleId=${result.data}")
+                showSnackbar(getString(R.string.browser_add_success, result.data.toString()))
+                viewModel.consumeFetchResult()
+                binding.searchInput.editText?.text?.clear()
+            }
+
+            is Result.Error -> {
+                PureLog.e(TAG, "handleFetchResult", "添加失败 | error=${result.error}")
+                showSnackbar(getString(R.string.browser_add_failed))
+                viewModel.consumeFetchResult()
+            }
+
+            else -> {
+                // 空状态不处理
+            }
+        }
+    }
+
+    private fun showSnackbar(message: String) {
+        Snackbar.make(binding.recyclerArticles, message, Snackbar.LENGTH_SHORT).show()
     }
 
     private fun setEmptyStateVisible(isEmpty: Boolean) {
@@ -169,5 +236,6 @@ public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
         public fun newInstance(): LibraryFragment = LibraryFragment()
 
         private const val ACTION_DELETE_ID = 1
+        private const val TAG = "LibraryFragment"
     }
 }

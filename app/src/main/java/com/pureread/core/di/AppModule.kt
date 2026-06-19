@@ -15,7 +15,9 @@ import com.pureread.data.repository.ArticleRepository
 import com.pureread.data.repository.RoomArticleRepository
 import com.pureread.domain.usecase.AddArticleUseCase
 import com.pureread.domain.usecase.DeleteArticleUseCase
+import com.pureread.domain.usecase.CreateNovelArticleUseCase
 import com.pureread.domain.usecase.DownloadNovelUseCase
+import com.pureread.domain.usecase.FetchAndAddArticleUseCase
 import com.pureread.domain.usecase.GetArticleByIdUseCase
 import com.pureread.domain.usecase.GetArticleUseCase
 import com.pureread.domain.usecase.GetArticlesUseCase
@@ -137,14 +139,16 @@ public val appModule = module {
     factory { DownloadNovelUseCase(novelCatalogParser = get(), chapterDao = get(), downloadTaskDao = get(), workManager = get()) }
     factory { SaveArticleProgressUseCase(articleRepository = get()) }
     factory { GetArticleByIdUseCase(articleRepository = get()) }
+    factory { FetchAndAddArticleUseCase(okHttpClient = get(), articleExtractor = get(), articleDao = get(), articleBodyDao = get()) }
+    factory { CreateNovelArticleUseCase(articleDao = get()) }
 
     // endregion
 
     // region ViewModel 层
 
     viewModel { MainViewModel() }
-    viewModel { LibraryViewModel(get(), get()) }
-    viewModel { BrowserViewModel(get()) }
+    viewModel { LibraryViewModel(get(), get(), get()) }
+    viewModel { BrowserViewModel(get(), get(), get()) }
     viewModel { ReaderViewModel(get(), get()) }
 
     // endregion

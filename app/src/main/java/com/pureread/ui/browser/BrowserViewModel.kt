@@ -6,6 +6,8 @@ import com.pureread.core.log.PureLog
 import com.pureread.data.model.PureError
 import com.pureread.data.model.Result
 import com.pureread.domain.usecase.AddArticleUseCase
+import com.pureread.domain.usecase.CreateNovelArticleUseCase
+import com.pureread.domain.usecase.DownloadNovelUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +24,8 @@ import kotlinx.coroutines.launch
  */
 public class BrowserViewModel public constructor(
     private val addArticleUseCase: AddArticleUseCase,
+    private val createNovelArticleUseCase: CreateNovelArticleUseCase,
+    private val downloadNovelUseCase: DownloadNovelUseCase,
 ) : ViewModel() {
 
     private val _currentUrlFlow = MutableStateFlow("")
@@ -44,6 +48,13 @@ public class BrowserViewModel public constructor(
      * 是否正在提取正文。
      */
     public val isExtractingFlow: StateFlow<Boolean> = _isExtractingFlow.asStateFlow()
+
+    private val _novelDownloadResultFlow = MutableStateFlow<Result<Unit>?>(null)
+
+    /**
+     * 最近一次小说下载入队结果。
+     */
+    public val novelDownloadResultFlow: StateFlow<Result<Unit>?> = _novelDownloadResultFlow.asStateFlow()
 
     /**
      * 更新当前 URL。
@@ -79,6 +90,40 @@ public class BrowserViewModel public constructor(
      */
     public fun consumeExtractResult(): Unit {
         _extractResultFlow.value = null
+    }
+
+    /**
+     * 将当前目录页作为小说下载源入队。
+     *
+     * @param sourceUrl 目录页 URL
+     * @param htmlString 目录页 HTML
+     * @param titleString 小说标题
+     */
+    public fun downloadNovel(sourceUrl: String, htmlString: String, titleString: String): Unit {
+        viewModelScope.launch {
+            _isExtractingFlow.value = true
+            try {
+                val createResult = createNovelArticleUseCase(sourceUrl, titleString)
+                _novelDownloadResultFlow.value = when (createResult) {
+                    is Result.Error -> createResult
+                    is Result.Success -> {
+                        downloadNovelUseCase(createResult.data, htmlString, sourceUrl)
+                    }
+                }
+            } catch (e: Exception) {
+                PureLog.e(TAG, "downloadNovel", e, "小说下载入队异常")
+                _novelDownloadResultFlow.value = Result.Error(PureError.Unknown(throwable = e))
+            } finally {
+                _isExtractingFlow.value = false
+            }
+        }
+    }
+
+    /**
+     * 消费最近一次小说下载结果。
+     */
+    public fun consumeNovelDownloadResult(): Unit {
+        _novelDownloadResultFlow.value = null
     }
 
     private companion object {

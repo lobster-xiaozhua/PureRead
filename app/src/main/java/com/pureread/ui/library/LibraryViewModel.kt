@@ -6,6 +6,7 @@ import com.pureread.core.log.PureLog
 import com.pureread.data.local.entity.ArticleEntity
 import com.pureread.data.model.Result
 import com.pureread.domain.usecase.DeleteArticleUseCase
+import com.pureread.domain.usecase.FetchAndAddArticleUseCase
 import com.pureread.domain.usecase.GetArticlesUseCase
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,15 +33,22 @@ import kotlinx.coroutines.launch
 public class LibraryViewModel public constructor(
     private val getArticlesUseCase: GetArticlesUseCase,
     private val deleteArticleUseCase: DeleteArticleUseCase,
+    private val fetchAndAddArticleUseCase: FetchAndAddArticleUseCase,
 ) : ViewModel() {
 
     private val searchQueryFlow = MutableStateFlow("")
     private val _isLoadingFlow = MutableStateFlow(false)
+    private val _fetchResultFlow = MutableStateFlow<Result<Long>?>(null)
 
     /**
      * 当前是否处于刷新/加载状态。
      */
     public val isLoadingFlow: StateFlow<Boolean> = _isLoadingFlow.asStateFlow()
+
+    /**
+     * 最近一次后台抓取文章结果。
+     */
+    public val fetchResultFlow: StateFlow<Result<Long>?> = _fetchResultFlow.asStateFlow()
 
     /**
      * 搜索过滤后的文章列表流。
@@ -82,6 +90,34 @@ public class LibraryViewModel public constructor(
             delay(REFRESH_INDICATOR_DELAY_MS)
             _isLoadingFlow.value = false
         }
+    }
+
+    /**
+     * 后台抓取 URL 并加入书架。
+     *
+     * @param urlString 文章 URL
+     */
+    public fun fetchArticle(urlString: String): Unit {
+        viewModelScope.launch {
+            _isLoadingFlow.value = true
+            try {
+                _fetchResultFlow.value = fetchAndAddArticleUseCase(urlString)
+            } catch (e: Exception) {
+                PureLog.e(TAG, "fetchArticle", e, "抓取异常")
+                _fetchResultFlow.value = Result.Error(
+                    com.pureread.data.model.PureError.Unknown(throwable = e)
+                )
+            } finally {
+                _isLoadingFlow.value = false
+            }
+        }
+    }
+
+    /**
+     * 消费最近一次抓取结果，避免重复提示。
+     */
+    public fun consumeFetchResult(): Unit {
+        _fetchResultFlow.value = null
     }
 
     /**

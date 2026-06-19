@@ -41,6 +41,7 @@ public class ReaderActivity : AppCompatActivity() {
 
     private var articleIdLong: Long = INVALID_ARTICLE_ID
     private var currentBodyHtml: String = ""
+    private var lastReadProgressPercentInt: Int = 0
 
     protected override fun onCreate(savedInstanceState: Bundle?): Unit {
         super.onCreate(savedInstanceState)
@@ -108,6 +109,7 @@ public class ReaderActivity : AppCompatActivity() {
             loadWithOverviewMode = true
         }
         binding.webViewReader.setBackgroundColor(Color.TRANSPARENT)
+        binding.webViewReader.webViewClient = ReaderWebViewClient()
 
         val gestureDetector = GestureDetectorCompat(
             this,
@@ -182,6 +184,7 @@ public class ReaderActivity : AppCompatActivity() {
                 val (article, bodyHtml) = result.data
                 binding.toolbarReader.title = article.title
                 currentBodyHtml = bodyHtml
+                lastReadProgressPercentInt = article.readProgress
                 reloadHtml()
             }
 
@@ -273,6 +276,29 @@ public class ReaderActivity : AppCompatActivity() {
             (webView.scrollY * 100 / maxScroll).coerceIn(0, 100)
         } else {
             0
+        }
+    }
+
+    /**
+     * 恢复上次阅读进度。
+     *
+     * 副作用：滚动 WebView 到 [progressPercentInt] 对应的垂直位置。
+     */
+    private fun restoreProgress(progressPercentInt: Int) {
+        binding.webViewReader.post {
+            val webView = binding.webViewReader
+            val contentHeight = (webView.contentHeight * webView.scale).toInt()
+            val maxScroll = (contentHeight - webView.height).coerceAtLeast(0)
+            val targetScrollY = (maxScroll * progressPercentInt / 100f).toInt()
+            webView.scrollTo(0, targetScrollY)
+            PureLog.d(TAG, "restoreProgress", "恢复进度 | progress=$progressPercentInt% scrollY=$targetScrollY")
+        }
+    }
+
+    private inner class ReaderWebViewClient : WebViewClient() {
+        public override fun onPageFinished(view: WebView?, url: String?): Unit {
+            super.onPageFinished(view, url)
+            restoreProgress(lastReadProgressPercentInt)
         }
     }
 
