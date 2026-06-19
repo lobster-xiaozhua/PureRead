@@ -186,12 +186,12 @@ public class BrowserActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleExtractResult(result: Result<com.pureread.data.remote.api.ArticleExtractResult>?) {
+    private fun handleExtractResult(result: Result<Long>?) {
         when (result) {
             is Result.Success -> {
-                val articleTitle = result.data.title
-                PureLog.i(TAG, "handleExtractResult", "加入书架 | title=$articleTitle")
-                showSnackbar(getString(R.string.browser_add_success, articleTitle))
+                val articleIdLong = result.data
+                PureLog.i(TAG, "handleExtractResult", "加入书架 | articleId=$articleIdLong")
+                showSnackbar(getString(R.string.browser_add_success, articleIdLong.toString()))
                 viewModel.consumeExtractResult()
             }
 

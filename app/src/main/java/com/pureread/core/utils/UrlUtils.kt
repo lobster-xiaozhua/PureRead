@@ -1,5 +1,6 @@
 package com.pureread.core.utils
 
+import com.pureread.core.log.PureLog
 import java.net.MalformedURLException
 import java.net.URL
 

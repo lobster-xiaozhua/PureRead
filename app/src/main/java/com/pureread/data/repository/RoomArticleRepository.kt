@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
 
 /**
  * 基于 Room 的文章仓库实现。
@@ -167,7 +168,7 @@ public class RoomArticleRepository(
     ): Result<Long> = withContext(Dispatchers.IO) {
         try {
             var newArticleId: Long = -1
-            database.runInTransaction {
+            database.withTransaction {
                 newArticleId = articleDao.insertArticle(article)
                 if (body != null) {
                     articleBodyDao.insertArticleBody(body.copy(articleId = newArticleId))

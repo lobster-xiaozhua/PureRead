@@ -2,6 +2,7 @@ package com.pureread.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -75,18 +76,21 @@ public data class ArticleEntity(
     /**
      * 与 [articleId] 同义的兼容性属性（UI 层使用 [id]）。
      */
+    @get:Ignore
     public val id: Long
         get() = articleId
 
     /**
      * 兼容 UI 层旧命名 [wordCountInt]。
      */
+    @get:Ignore
     public val wordCountInt: Int
         get() = wordCount
 
     /**
      * 兼容 UI 层旧命名 [readProgressInt]。
      */
+    @get:Ignore
     public val readProgressInt: Int
         get() = readProgress
 

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.pureread.core.log.PureLog
 import com.pureread.data.model.PureError
 import com.pureread.data.model.Result
-import com.pureread.data.remote.api.ArticleExtractResult
 import com.pureread.domain.usecase.AddArticleUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,12 +31,12 @@ public class BrowserViewModel public constructor(
      */
     public val currentUrlFlow: StateFlow<String> = _currentUrlFlow.asStateFlow()
 
-    private val _extractResultFlow = MutableStateFlow<Result<ArticleExtractResult>?>(null)
+    private val _extractResultFlow = MutableStateFlow<Result<Long>?>(null)
 
     /**
-     * 最近一次提取结果。
+     * 最近一次提取结果（成功为文章 ID，失败为错误）。
      */
-    public val extractResultFlow: StateFlow<Result<ArticleExtractResult>?> = _extractResultFlow.asStateFlow()
+    public val extractResultFlow: StateFlow<Result<Long>?> = _extractResultFlow.asStateFlow()
 
     private val _isExtractingFlow = MutableStateFlow(false)
 
