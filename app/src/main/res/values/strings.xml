@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PureRead</string>
+    <string name="bottom_nav_library">文库</string>
+    <string name="bottom_nav_browser">浏览</string>
+    <string name="bottom_nav_settings">设置</string>
+    <string name="hint_search_url">输入文章或小说链接</string>
+    <string name="action_add">添加</string>
+    <string name="action_search">搜索</string>
+    <string name="action_delete">删除</string>
+    <string name="action_download">下载</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_share">分享</string>
+    <string name="reader_title">阅读器</string>
+    <string name="browser_title">浏览</string>
+    <string name="empty_library">文库为空，点击下方浏览添加文章</string>
+    <string name="loading">加载中…</string>
+    <string name="error_network">网络错误，请稍后重试</string>
+    <string name="error_extract">正文提取失败</string>
+    <string name="download_running">下载中…</string>
+    <string name="download_completed">下载完成</string>
+    <string name="download_failed">下载失败</string>
+    <string name="selected_count">已选择 %d 项</string>
+    <string name="reader_theme_day">日</string>
+    <string name="reader_theme_night">夜</string>
+    <string name="reader_theme_eye">护</string>
+    <string name="reader_font_decrease">A-</string>
+    <string name="reader_font_increase">A+</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_day">日间</string>
+    <string name="settings_theme_night">夜间</string>
+    <string name="settings_font_size">正文字号</string>
+    <string name="settings_clear_cache">清除缓存</string>
+    <string name="settings_clear_cache_summary">清除 WebView 与磁盘缓存</string>
+    <string name="settings_cache_cleared">缓存已清除</string>
+    <string name="settings_cache_clear_failed">缓存清除失败</string>
+    <string name="browser_add_success">已加入书架：%s</string>
+    <string name="browser_add_failed">加入书架失败</string>
+    <string name="network_offline">当前无网络，请连接后重试</string>
+    <string name="network_online">网络已恢复</string>
+</resources>

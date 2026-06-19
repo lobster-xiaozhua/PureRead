@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <ListPreference
+        android:key="theme"
+        android:title="@string/settings_theme"
+        android:summary="%s"
+        android:entries="@array/theme_entries"
+        android:entryValues="@array/theme_values"
+        android:defaultValue="system" />
+
+    <SeekBarPreference
+        android:key="reader_font_size"
+        android:title="@string/settings_font_size"
+        android:min="12"
+        android:max="32"
+        android:defaultValue="18"
+        android:showSeekBarValue="true" />
+
+    <Preference
+        android:key="clear_cache"
+        android:title="@string/settings_clear_cache"
+        android:summary="@string/settings_clear_cache_summary" />
+
+</PreferenceScreen>

@@ -1,0 +1,263 @@
+package com.pureread.ui.library
+
+import android.os.Bundle
+import android.view.ActionMode
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.snackbar.Snackbar
+import com.pureread.R
+import com.pureread.core.log.PureLog
+import com.pureread.core.network.NetworkState
+import com.pureread.data.model.Result
+import kotlinx.coroutines.flow.Flow
+import com.pureread.databinding.FragmentLibraryBinding
+import com.pureread.ui.common.ViewBindingFragment
+import com.pureread.ui.reader.ReaderActivity
+import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
+import org.koin.androidx.viewmodel.ext.android.viewModel
+
+/**
+ * 书架页面 Fragment。
+ *
+ * 职责：
+ * - 展示文章列表、空状态、搜索栏与下拉刷新。
+ * - 支持长按进入多选并通过 ActionMode 批量删除。
+ *
+ * 线程安全：所有 UI 操作运行在主线程。
+ */
+public class LibraryFragment : ViewBindingFragment<FragmentLibraryBinding>() {
+
+    private val viewModel: LibraryViewModel by viewModel()
+    private val networkStateFlow: Flow<NetworkState> by inject()
+    private lateinit var adapter: ArticleAdapter
+
+    private var actionMode: ActionMode? = null
+
+    private val actionModeCallback = object : ActionMode.Callback {
+        public override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+            menu?.add(0, ACTION_DELETE_ID, 0, getString(R.string.action_delete))
+                ?.setIcon(android.R.drawable.ic_menu_delete)
+                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            updateActionModeTitle(mode)
+            return true
+        }
+
+        public override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean = false
+
+        public override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean {
+            if (item?.itemId == ACTION_DELETE_ID) {
+                viewModel.deleteSelected(adapter.getSelectedIds())
+                finishActionMode()
+                return true
+            }
+            return false
+        }
+
+        public override fun onDestroyActionMode(mode: ActionMode?): Unit {
+            adapter.clearSelection()
+            actionMode = null
+        }
+    }
+
+    protected override fun createBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+    ): FragmentLibraryBinding = FragmentLibraryBinding.inflate(inflater, container, false)
+
+    public override fun onViewCreated(view: View, savedInstanceState: Bundle?): Unit {
+        super.onViewCreated(view, savedInstanceState)
+        adapter = ArticleAdapter(createArticleClickListener())
+        setupRecyclerView()
+        setupSearch()
+        setupSwipeRefresh()
+        observeViewModel()
+    }
+
+    private fun createArticleClickListener(): ArticleAdapter.ArticleClickListener {
+        return object : ArticleAdapter.ArticleClickListener {
+            public override fun onItemClick(article: ArticleUiModel): Unit {
+                if (adapter.isSelectionMode()) {
+                    updateActionModeTitle(actionMode)
+                    if (!adapter.isSelectionMode()) {
+                        finishActionMode()
+                    }
+                } else {
+                    ReaderActivity.start(requireContext(), article.idLong)
+                }
+            }
+
+            public override fun onItemLongClick(article: ArticleUiModel): Unit {
+                if (!adapter.isSelectionMode()) {
+                    startActionMode()
+                }
+                updateActionModeTitle(actionMode)
+                if (!adapter.isSelectionMode()) {
+                    finishActionMode()
+                }
+            }
+        }
+    }
+
+    private fun setupRecyclerView() {
+        binding.recyclerArticles.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerArticles.adapter = adapter
+    }
+
+    private fun setupSearch() {
+        val editText = binding.searchInput.editText ?: return
+        editText.doAfterTextChanged { editable ->
+            val input = editable?.toString().orEmpty()
+            viewModel.search(input)
+            updateSearchEndIcon(input)
+        }
+        editText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO) {
+                tryFetchUrl(editText.text?.toString().orEmpty())
+                true
+            } else {
+                false
+            }
+        }
+        binding.searchInput.setEndIconOnClickListener {
+            tryFetchUrl(editText.text?.toString().orEmpty())
+        }
+    }
+
+    private fun updateSearchEndIcon(input: String) {
+        val isUrl = input.trim().startsWith("http://") || input.trim().startsWith("https://")
+        binding.searchInput.endIconDrawable = if (isUrl) {
+            requireContext().getDrawable(com.pureread.R.drawable.ic_browser)
+        } else {
+            requireContext().getDrawable(com.pureread.R.drawable.ic_browser)
+        }
+        binding.searchInput.isEndIconVisible = isUrl
+    }
+
+    private fun tryFetchUrl(input: String) {
+        val trimmed = input.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            viewModel.fetchArticle(trimmed)
+            binding.searchInput.editText?.clearFocus()
+        }
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.setOnRefreshListener {
+            viewModel.refresh()
+        }
+    }
+
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.articlesUiFlow.collect { articleList ->
+                        adapter.submitList(articleList)
+                        setEmptyStateVisible(articleList.isEmpty())
+                    }
+                }
+
+                launch {
+                    viewModel.isLoadingFlow.collect { isLoading ->
+                        binding.swipeRefresh.isRefreshing = isLoading
+                    }
+                }
+
+                launch {
+                    viewModel.fetchResultFlow.collect { result ->
+                        handleFetchResult(result)
+                    }
+                }
+
+                launch {
+                    networkStateFlow.collect { state ->
+                        handleNetworkState(state)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleNetworkState(state: NetworkState) {
+        when (state) {
+            is NetworkState.Unavailable -> {
+                showSnackbar(getString(R.string.network_offline))
+            }
+
+            else -> {
+                // Available / Checking 不提示
+            }
+        }
+    }
+
+    private fun handleFetchResult(result: Result<Long>?) {
+        when (result) {
+            is Result.Success -> {
+                PureLog.i(TAG, "handleFetchResult", "添加成功 | articleId=${result.data}")
+                showSnackbar(getString(R.string.browser_add_success, result.data.toString()))
+                viewModel.consumeFetchResult()
+                binding.searchInput.editText?.text?.clear()
+            }
+
+            is Result.Error -> {
+                PureLog.e(TAG, "handleFetchResult", "添加失败 | error=${result.error}")
+                showSnackbar(getString(R.string.browser_add_failed))
+                viewModel.consumeFetchResult()
+            }
+
+            else -> {
+                // 空状态不处理
+            }
+        }
+    }
+
+    private fun showSnackbar(message: String) {
+        Snackbar.make(binding.recyclerArticles, message, Snackbar.LENGTH_SHORT).show()
+    }
+
+    private fun setEmptyStateVisible(isEmpty: Boolean) {
+        binding.emptyStateView.root.isVisible = isEmpty
+        binding.recyclerArticles.isVisible = !isEmpty
+    }
+
+    private fun startActionMode() {
+        val activity = requireActivity() as? AppCompatActivity ?: return
+        actionMode = activity.startSupportActionMode(actionModeCallback)
+    }
+
+    private fun updateActionModeTitle(mode: ActionMode?) {
+        val count = adapter.getSelectedIds().size
+        mode?.title = getString(R.string.selected_count, count)
+    }
+
+    private fun finishActionMode() {
+        actionMode?.finish()
+        actionMode = null
+    }
+
+    public companion object {
+
+        /**
+         * 创建 [LibraryFragment] 实例。
+         *
+         * @return 新的 Fragment 实例
+         */
+        @JvmStatic
+        public fun newInstance(): LibraryFragment = LibraryFragment()
+
+        private const val ACTION_DELETE_ID = 1
+        private const val TAG = "LibraryFragment"
+    }
+}
